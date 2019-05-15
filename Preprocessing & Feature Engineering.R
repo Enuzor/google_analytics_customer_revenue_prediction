@@ -404,3 +404,6 @@ testing_set <- Generate_testing_set(test)
 
 saveRDS(training_set,file="/Users/peterfagan/Desktop/training_set")
 saveRDS(testing_set,file="/Users/peterfagan/Desktop/testing_set")
+
+write_csv(training_set,path="/Users/peterfagan/Desktop/training_set.csv")
+write_csv(testing_set,path="/Users/peterfagan/Desktop/testing_set.csv")
