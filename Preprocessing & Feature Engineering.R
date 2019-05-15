@@ -217,6 +217,7 @@ Feature_engineering <- function(data)
   data$geoNetwork_subContinent <- NULL
   data$geoNetwork_country <-NULL
   data$geoNetwork_city <- NULL
+  data$geoNetwork_networkDomain <- NULL
   data$geoNetwork_metro <-NULL
   data$geoNetwork_region <- NULL
   data$trafficSource_adContent  <- NULL                 
@@ -251,10 +252,10 @@ test$date <- ymd(test$date)
 Generate_training_set <- function(data,t)
 {
 
-  #Split into windows correspinding to the traffic data and the period used to calculate
+  #Split into windows corresponding to the traffic data and the period used to calculate
   #the target variable.
   traffic_dat_window <- data[data$date >= min(data$date)+(168*t) & data$date <= min(data$date)+(168*(t+1)),]
-  target_calc_window <- data[data$date >= min(data$date)+(168*t)+46 & data$date <= min(data$date)+(168*(t+1))+46+62,]
+  target_calc_window <- data[data$date >= min(data$date)+(168*(t+1))+46 & data$date <= min(data$date)+(168*(t+1))+46+62,]
   
   
   #Returning and non-returning customers ids
@@ -324,7 +325,9 @@ Generate_training_set <- function(data,t)
   #Setting found NA values to zero (Only 10 occurences)
   dtrain$pageviews_mean = ifelse(is.na(dtrain$pageviews_mean),0,dtrain$pageviews_mean)
   dtrain$pageviews_median = ifelse(is.na(dtrain$pageviews_median),0,dtrain$pageviews_median)
-
+  dtrain$pageviews_max <- ifelse(is.infinite(dtrain$pageviews_max),0,dtrain$pageviews_max)
+  dtrain$pageviews_min <- ifelse(is.infinite(dtrain$pageviews_min),0,dtrain$pageviews_min)
+  
   return(dtrain)
 }
 
@@ -337,7 +340,7 @@ training_set <- rbind(tr0,tr1,tr2)
 
 
 
-Generate_testing_set <- function(data,t)
+Generate_testing_set <- function(data)
 {
   dtrain_maxdate = max(data$date)
   dtrain_mindate = min(data$date)
@@ -389,6 +392,9 @@ Generate_testing_set <- function(data,t)
   #Setting found NA values to zero (Only 10 occurences)
   features$pageviews_mean = ifelse(is.na(features$pageviews_mean),0,features$pageviews_mean)
   features$pageviews_median = ifelse(is.na(features$pageviews_median),0,features$pageviews_median)
+  features$pageviews_max <- ifelse(is.infinite(features$pageviews_max),0,features$pageviews_max)
+  features$pageviews_min <- ifelse(is.infinite(features$pageviews_min),0,features$pageviews_min)
+  
   
   return(features)
 }
