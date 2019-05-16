@@ -50,15 +50,16 @@ x = data.matrix(x_train_sample)
 y = target_train_sample
 y_ret = ret_train_sample
 x_t = data.matrix(x_test_sample)
+
+#Variable Importance (Interpretability)
 param <- list(max.depth = 5, eta = 0.1,  objective="reg:linear",subsample=0.9)
 xgb_mod <- xgboost(param, data = x, label =y,nround = 10)
 pred_xgb <- predict(xgb_mod, x_t)
-RMSE_xgb <- mean((pred_xgb-target_test_sample)^2)
 xgb_imp <- xgb.importance(feature_names = colnames(x),model = xgb_mod)
 xgb.plot.importance(xgb_imp)
 xgb.sel <- xgb_imp$Feature
 
-fit_glm <- glm(x,y,family="gaussian")
+fit_glm <- glmnet(x,y,family="gaussian")
 summary(fit_glm)
 varIMP(fit_glm)
 
@@ -68,6 +69,8 @@ varImp(fit_rf)
 
 
 #Neural Network (Regression)
+#Grid search to tune parameters.
+#For the case of brevity of run time it has been excluded here.
 nnet_trcontrol <- trainControl(
   method = 'cv', 
   number = 10, 
@@ -102,6 +105,9 @@ plot(nnet_model)
 
 
 #XGBoost (Regression)
+#Grid search to tune parameters.
+#For the case of brevity of run time it has been minimised here.
+
 xgb_trcontrol = trainControl(
   method = "cv",
   number = 10,  
@@ -189,6 +195,43 @@ stopCluster(cluster)
 nnetcl_pred <- predict(nnetcl_model,x_t,type="prob")
 tb = table(max.col(nnetcl_pred),ret_test_sample)
 (acc_nnetcl = sum(diag(tb))/sum(tb))
+
+#xgboost (classification)
+xgbcl_trcontrol <- trainControl(
+  method = "cv",
+  number = 10,  
+  verboseIter = FALSE,
+  classProbs=TRUE,
+  summaryFunction=twoClassSummary
+)
+
+xgbclGrid <- expand.grid(nrounds = 100,
+                       max_depth = c(5,8,10),
+                       eta = 0.01,
+                       gamma=0,
+                       min_child_weight = 1,
+                       colsample_bytree = 0.8,
+                       subsample = 1
+)
+
+cluster <- makeCluster(detectCores() - 1) #leave 1 core for Operating System
+registerDoParallel(cluster)
+
+xgbcl_model = caret::train(
+  x, y_ret,  
+  trControl = xgbcl_trcontrol,
+  tuneGrid = xgbclGrid,
+  method = "xgbTree",
+  metric="ROC",
+  allowParallel = TRUE
+)
+
+stopCluster(cluster)
+
+xgbcl_pred <- predict(xgb_model,x_t)
+
+
+
 
 
 
