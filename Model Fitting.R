@@ -196,16 +196,25 @@ nnetcl_pred <- predict(nnetcl_model,x_t,type="prob")
 tb = table(max.col(nnetcl_pred),ret_test_sample)
 (acc_nnetcl = sum(diag(tb))/sum(tb))
 
-#xgboost (classification)
-xgbcl_trcontrol <- trainControl(
+
+#Lasso for Classification
+glmcl_mod <- cv.glmnet(x, y_ret, alpha = 1, family="binomial",type.measure = "auc", nfolds = 10)
+pred_glmcl <- predict(glm_mod, newx = x_t, s = "lambda.min",type="class")
+(tb = table(pred_glmcl,ret_test_sample))
+(acc_glmcl = sum(diag(tb))/sum(tb))
+
+
+
+
+
+#Kaggle Competition submission (using the above analysis).
+xgb_trcontrol = trainControl(
   method = "cv",
   number = 10,  
-  verboseIter = FALSE,
-  classProbs=TRUE,
-  summaryFunction=twoClassSummary
+  verboseIter = FALSE
 )
 
-xgbclGrid <- expand.grid(nrounds = 100,
+xgbGrid <- expand.grid(nrounds = 100,
                        max_depth = c(5,8,10),
                        eta = 0.01,
                        gamma=0,
@@ -217,33 +226,24 @@ xgbclGrid <- expand.grid(nrounds = 100,
 cluster <- makeCluster(detectCores() - 1) #leave 1 core for Operating System
 registerDoParallel(cluster)
 
-xgbcl_model = caret::train(
-  x, y_ret,  
-  trControl = xgbcl_trcontrol,
-  tuneGrid = xgbclGrid,
+xgb_model = caret::train(
+  x_train, target_train,  
+  trControl = xgb_trcontrol,
+  tuneGrid = xgbGrid,
   method = "xgbTree",
-  metric="ROC",
+  metric="RMSE",
   allowParallel = TRUE
 )
 
 stopCluster(cluster)
 
-xgbcl_pred <- predict(xgb_model,x_t)
 
+xgb_pred <- predict(xgb_model,x_test)
+(RMSE_xgb <- mean((xgb_pred-target_test)^2))
 
+glmcl_mod <- cv.glmnet(x_train, ret_train, alpha = 1, family="binomial",type.measure = "auc", nfolds = 10)
+pred_glmcl <- predict(glm_mod, newx = x_test, s = "lambda.min",type="response")
 
+final_predictions <- (xgb_pred*pred_glmcl)
 
-
-
-#Lasso for Classification
-glmcl_mod <- cv.glmnet(x, y_ret, alpha = 1, family="binomial",type.measure = "auc", nfolds = 10)
-pred_glmcl <- predict(glm_mod, newx = x_t, s = "lambda.min",type="class")
-(tb = table(pred_glmcl,ret_test_sample))
-(acc_glmcl = sum(diag(tb))/sum(tb))
-
-
-
-#Kaggle Competition submission (using the above analysis).
-
-
-
+#Write submission file
