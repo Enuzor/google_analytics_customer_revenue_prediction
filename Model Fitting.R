@@ -8,6 +8,7 @@ library(caret)
 
 library(parallel)
 library(doParallel)
+library(cloudml)
 
 train <- read_csv("/Users/peterfagan/Desktop/training_set.csv")
 test <- read_csv("/Users/peterfagan/Desktop/testing_set.csv")
@@ -207,24 +208,22 @@ pred_glmcl <- predict(glm_mod, newx = x_t, s = "lambda.min",type="class")
 
 
 
-#Kaggle Competition submission (using the above analysis).
+#Kaggle Competition submission (Run as google cloudml job).
 xgb_trcontrol = trainControl(
   method = "cv",
   number = 10,  
   verboseIter = FALSE
 )
 
-xgbGrid <- expand.grid(nrounds = 100,
+xgbGrid <- expand.grid(nrounds = 1000,
                        max_depth = c(5,8,10),
-                       eta = 0.01,
-                       gamma=0,
-                       min_child_weight = 1,
-                       colsample_bytree = 0.8,
-                       subsample = 1
+                       eta = c(0.01 ,0.05 ,0.1 ,0.2, 0.3),
+                       gamma=c(0,0.1,0.5,1),
+                       min_child_weight = c(1,2,3),
+                       colsample_bytree = c(0.5, 0.75,1),
+                       subsample = c(0.5,0.75,1)
 )
 
-cluster <- makeCluster(detectCores() - 1) #leave 1 core for Operating System
-registerDoParallel(cluster)
 
 xgb_model = caret::train(
   x_train, target_train,  
@@ -235,7 +234,6 @@ xgb_model = caret::train(
   allowParallel = TRUE
 )
 
-stopCluster(cluster)
 
 
 xgb_pred <- predict(xgb_model,x_test)
@@ -245,5 +243,5 @@ glmcl_mod <- cv.glmnet(x_train, ret_train, alpha = 1, family="binomial",type.mea
 pred_glmcl <- predict(glm_mod, newx = x_test, s = "lambda.min",type="response")
 
 final_predictions <- (xgb_pred*pred_glmcl)
-
-#Write submission file
+submission_file <- cbind(test$fullVisitorId,final_predictions)
+write_csv(submission_file,path="/Users/peterfagan/Desktop/submission_file.csv")
