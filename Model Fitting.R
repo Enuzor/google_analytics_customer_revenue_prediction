@@ -356,7 +356,7 @@ nnet_pred <- predict(nnet_model,x_t)
 
 
 final_prediction <- pred_glmcl*nnet_pred
-final_rmse <- sqrt(mean((target_test_sample - final_prediction)^2))
+(final_rmse <- sqrt(mean((target_test_sample - final_prediction)^2)))
 
 
 
