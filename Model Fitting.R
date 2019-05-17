@@ -1,4 +1,5 @@
 library(plyr)
+library(reshape2)
 library(lubridate)
 library(tidyverse)
 library(gridExtra)
@@ -20,11 +21,12 @@ test <- as.data.frame(test)
 train$fullVisitorId <- NULL
 
 
-#For the sake of written report I will construct a test set for which
-#I have values of the target variable(i.e. from the train). Afterwards 
-#I will address the submission of predictions for the Kaggle test set (test).
+### Splitting up datasets for analyisis ###
 
-#Splitting into training and test sets (smaller samples s code runs quickly)
+#Note in report we need to be able to evaluate performance.
+#Therefore we require target variable values for test set.
+
+#Splitting into training and test sets (smaller samples for quick code)
 N_sample = round(nrow(train)*0.01)
 itrain_sample = sample(1:N_sample,size=round(N_sample*0.7),replace=FALSE)
 x_train_sample <- train[itrain_sample,c(-1,-2)]
@@ -35,7 +37,7 @@ ret_train_sample <- as.factor(make.names(train[itrain_sample,2]))
 ret_test_sample <- as.factor(make.names(train[-itrain_sample,2]))
 
 
-#Full samples (perfomrance enhancement technologies need considering)
+#Full samples
 N = nrow(train)
 itrain = sample(1:N,size=round(N*0.7),replace=FALSE)
 x_train <- train[itrain,c(-1,-2)]
@@ -46,13 +48,12 @@ ret_train <- as.factor(make.names(train[itrain,2]))
 ret_test <- as.factor(make.names(train[-itrain,2]))
 
 
-#To begin with I fit models to predict the target variable (revenue),
-#therefore we begin with a regression problem.
-#Variable selection analysis (Forward/backward selection & Random Forest)
 x = data.matrix(x_train_sample)
 y = target_train_sample
 y_ret = ret_train_sample
 x_t = data.matrix(x_test_sample)
+
+### Feature Analysis ###
 
 #Variable Importance (Interpretability)
 param <- list(max.depth = 5, eta = 0.1,  objective="reg:linear",subsample=0.9)
@@ -61,6 +62,13 @@ pred_xgb <- predict(xgb_mod, x_t)
 xgb_imp <- xgb.importance(feature_names = colnames(x),model = xgb_mod)
 xgb.plot.importance(xgb_imp)
 xgb.sel <- xgb_imp$Feature
+
+#Variable Correlations
+cor_mat <- round(cor(x[,-18]),2)
+high_cor <- findCorrelation(cor_mat,cutoff=0.8)
+colnames(x)[high_cor]
+melted_cor_mat <- melt(cor_mat)
+ggplot(data = melted_cor_mat, aes(x=Var1, y=Var2, fill=value)) + geom_tile() + theme(axis.text.x = element_text(angle = 60, hjust = 1))
 
 
 
@@ -104,7 +112,7 @@ xgb_pred <- predict(xgb_model,x_t)
 (RMSE_xgb <- sqrt(mean((xgb_pred-target_test_sample)^2)))
 
 plot(xgb_model)
-
+xgb_model$bestTune
 
 #Neural Network (Regression)
 #Grid search to tune parameters.
@@ -142,7 +150,7 @@ nnet_pred <- predict(nnet_model,x_t)
 (RMSE_nnet <- sqrt(mean((nnet_pred-target_test_sample)^2)))
 
 plot(nnet_model)
-
+nnet_model$bestTune
 
 
 #Lasso Regression
@@ -170,6 +178,7 @@ glmnet_model <- train(
 pred_glmnet <- predict(glmnet_model, newx = x_t, s = "lambda.min")
 (RMSE_glm <- sqrt(mean((target_test_sample-pred_glmnet)^2)))
 
+glmnet_model$bestTune
 
 
 
@@ -180,10 +189,10 @@ summary(results)
 bwplot(results)
 
 rmse_xgb = rmse_nnet = rmse_glmnet = numeric(10)
-folds = cut(1:10000,10,labels = FALSE)
+folds = cut(1:30000,30,labels = FALSE)
 random_folds = sample(folds,10000)
 
-for(i in 1:10){
+for(i in 1:30){
   itrain = which(random_folds==i)
   
   x_train <- data.matrix(train[itrain,c(-1,-2)])
@@ -244,12 +253,12 @@ boxplot(rmse_xgb,rmse_nnet,rmse_glmnet,
         ylab = "RMSE")
 
 #Normality Assumption
-shapiro.test(rmse_xgb) #fails the test for normality at 0.05 level.
-shapiro.test(rmse_nnet)
+shapiro.test(rmse_xgb) #Fails normaility test
+shapiro.test(rmse_nnet) #Fails normality test
 shapiro.test(rmse_glmnet)
 
 #Assumption of homogeneity of variances
-bartlett.test(dat$RMSE,dat$Model) #fails implies unequal variances 
+bartlett.test(dat$RMSE,dat$Model) #passes implies unequal variances 
 
 rmses <- c(rmse_xgb,rmse_nnet,rmse_glmnet)
 groups <- as.factor(c(replicate(10,"rmse_xgb"), replicate(10,"rmse_nnet"), replicate(10,"rmse_glmnet")))
@@ -258,13 +267,9 @@ colnames(dat)=c("Model","RMSE")
 anova <- aov(RMSE~Model,data=dat)
 summary(anova) #Not significant at 0.05 level
 
-
-#Resort to non-parametric test which makes no assumptions
-#about the underlying distributions
-
-wilcox <- pairwise.wilcox.test(dat$RMSE,dat$Model,paired=TRUE)
-wilcox$p.value
-#Nerual network model shows clear differences under wilcox at 0.06.
+t.test(rmse_nnet,rmse_glmnet,paired = TRUE)
+t.test(rmse_nnet,rmse_xgb,paired = TRUE)
+t.test(rmse_xgb, rmse_glmnet,pared=TRUE)
 
 
 
@@ -310,9 +315,11 @@ tb = table(max.col(nnetcl_pred),ret_test_sample)
 
 #Lasso for Classification
 glmcl_mod <- cv.glmnet(x, y_ret, alpha = 1, family="binomial",type.measure = "auc", nfolds = 10)
-pred_glmcl <- predict(glm_mod, newx = x_t, s = "lambda.min",type="class")
+pred_glmcl <- predict(glmcl_mod, newx = x_t, s = "lambda.min",type="class")
 (tb = table(pred_glmcl,ret_test_sample))
 (acc_glmcl = sum(diag(tb))/sum(tb))
+
+pred_glmcl <- predict(glmcl_mod, newx = x_t, s = "lambda.min",type="response")
 
 
 
