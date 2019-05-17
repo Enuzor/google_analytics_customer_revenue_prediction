@@ -6,6 +6,7 @@ library(xgboost)
 library(Matrix)
 library(caret)
 library(glmnet)
+library(randomForest)
 
 library(parallel)
 library(doParallel)
@@ -61,13 +62,9 @@ xgb_imp <- xgb.importance(feature_names = colnames(x),model = xgb_mod)
 xgb.plot.importance(xgb_imp)
 xgb.sel <- xgb_imp$Feature
 
-fit_glm <- glmnet(x,y,family="gaussian")
-summary(fit_glm)
-varIMP(fit_glm)
 
-fit_rf <- randomForest(x,y)
-importance(fit_rf)
-varImp(fit_rf)
+
+### HyperParameter Tuning (Regression) ###
 
 #XGBoost (Regression)
 #Grid search to tune parameters.
@@ -111,7 +108,8 @@ plot(xgb_model)
 
 #Neural Network (Regression)
 #Grid search to tune parameters.
-#For the case of brevity of run time it has been excluded here.
+#For the case of brevity of run time it has been mimimised here.
+
 nnet_trcontrol <- trainControl(
   method = 'cv', 
   number = 10, 
@@ -175,7 +173,7 @@ pred_glmnet <- predict(glmnet_model, newx = x_t, s = "lambda.min")
 
 
 
-#Assessment of model performances
+### Model Comparison ###
 results <- resamples(list(xgboost=xgb_model, NeuralNetwork=nnet_model,Lasso =glmnet_model ))
 results$values
 summary(results)
@@ -239,7 +237,38 @@ for(i in 1:10){
   
 }
 
-boxplot(rmse_xgb,rmse_nnet,rmse_glmnet,col = c("green","white","orange"),names=c("XGBoost","Neural Network","Lasso"))
+boxplot(rmse_xgb,rmse_nnet,rmse_glmnet,
+        col = c("green","white","orange"),
+        names=c("XGBoost","Neural Network","Lasso"),
+        main="Boxplots of RMSE for Independent samples",
+        ylab = "RMSE")
+
+#Normality Assumption
+shapiro.test(rmse_xgb) #fails the test for normality at 0.05 level.
+shapiro.test(rmse_nnet)
+shapiro.test(rmse_glmnet)
+
+#Assumption of homogeneity of variances
+bartlett.test(dat$RMSE,dat$Model) #fails implies unequal variances 
+
+rmses <- c(rmse_xgb,rmse_nnet,rmse_glmnet)
+groups <- as.factor(c(replicate(10,"rmse_xgb"), replicate(10,"rmse_nnet"), replicate(10,"rmse_glmnet")))
+dat <- as.data.frame(cbind(groups,rmses))
+colnames(dat)=c("Model","RMSE")
+anova <- aov(RMSE~Model,data=dat)
+summary(anova) #Not significant at 0.05 level
+
+
+#Resort to non-parametric test which makes no assumptions
+#about the underlying distributions
+
+wilcox <- pairwise.wilcox.test(dat$RMSE,dat$Model,paired=TRUE)
+wilcox$p.value
+#Nerual network model shows clear differences under wilcox at 0.06.
+
+
+
+### Hyperparameter tuning (classification) ###
 
 #Next we aim to improve our above predictions through additionally predicting the
 #likelihood of a customer returning. This will be treated as a binary classification,
@@ -287,42 +316,82 @@ pred_glmcl <- predict(glm_mod, newx = x_t, s = "lambda.min",type="class")
 
 
 
-
-
-#Kaggle Competition submission (Run as google cloudml job).
-xgb_trcontrol = trainControl(
-  method = "cv",
-  number = 10,  
+### Final Model & Prediction ###
+nnet_trcontrol <- trainControl(
+  method = 'cv', 
+  number = 10, 
   verboseIter = FALSE
 )
 
-xgbGrid <- expand.grid(nrounds = 1000,
-                       max_depth = c(5,8,10),
-                       eta = c(0.01 ,0.05 ,0.1 ,0.2, 0.3),
-                       gamma=c(0,0.1,0.5,1),
-                       min_child_weight = c(1,2,3),
-                       colsample_bytree = c(0.5, 0.75,1),
-                       subsample = c(0.5,0.75,1)
+nnetGrid <- expand.grid(
+  size = c(5,10,15,20),
+  decay = c(0.01,0.05,0.1,0.2)
 )
 
+cluster <- makeCluster(detectCores() - 1) # convention to leave 1 core for OS
+registerDoParallel(cluster)
 
-xgb_model = caret::train(
-  x_train, target_train,  
-  trControl = xgb_trcontrol,
-  tuneGrid = xgbGrid,
-  method = "xgbTree",
+set.seed(150)
+nnet_model = caret::train(
+  x, y,  
+  trControl = nnet_trcontrol,
+  tuneGrid = nnetGrid,
+  method = "nnet",
   metric="RMSE",
+  preProcess=c("scale","center"),
   allowParallel = TRUE
 )
 
 
+stopCluster(cluster)
 
-xgb_pred <- predict(xgb_model,x_test)
-(RMSE_xgb <- mean((xgb_pred-target_test)^2))
+nnet_pred <- predict(nnet_model,x_t)
 
-glmcl_mod <- cv.glmnet(x_train, ret_train, alpha = 1, family="binomial",type.measure = "auc", nfolds = 10)
-pred_glmcl <- predict(glm_mod, newx = x_test, s = "lambda.min",type="response")
 
-final_predictions <- (xgb_pred*pred_glmcl)
-submission_file <- cbind(test$fullVisitorId,final_predictions)
-write_csv(submission_file,path="/Users/peterfagan/Desktop/submission_file.csv")
+final_prediction <- pred_glmcl*nnet_pred
+final_rmse <- sqrt(mean((target_test_sample - final_prediction)^2))
+
+
+
+
+### Kaggle Competition submission (Run as google cloudml job) ###
+x = data.matrix(x_train)
+y = target_train
+y_ret = ret_train
+x_t = data.matrix(x_test)
+
+nnet_trcontrol <- trainControl(
+  method = 'cv', 
+  number = 10, 
+  verboseIter = FALSE
+)
+
+nnetGrid <- expand.grid(
+  size = c(5,10,15,20,25,30),
+  decay = c(0.01,0.05,0.1,0.2)
+)
+
+cluster <- makeCluster(detectCores() - 1) # convention to leave 1 core for OS
+registerDoParallel(cluster)
+
+set.seed(150)
+nnet_model = caret::train(
+  x, y,  
+  trControl = nnet_trcontrol,
+  tuneGrid = nnetGrid,
+  method = "nnet",
+  metric="RMSE",
+  preProcess=c("scale","center"),
+  allowParallel = TRUE
+)
+
+
+stopCluster(cluster)
+
+nnet_pred <- predict(nnet_model,x_t)
+
+glmcl_mod <- cv.glmnet(x, y_ret, alpha = 1, family="binomial",type.measure = "auc", nfolds = 10)
+pred_glmcl <- predict(glm_mod, newx = x_t, s = "lambda.min",type="class")
+
+
+final_prediction = nnet_pred*pred_glmcl
