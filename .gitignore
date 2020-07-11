@@ -1,3 +1,6 @@
+.DS_Store
+_config.yml
+
 # History files
 .Rhistory
 .Rapp.history
