@@ -5,7 +5,7 @@
 <img src=https://img.shields.io/github/license/peterdavidfagan/Google-Analytics-Customer-Revenue-Prediction>
 </p>
 
-<p align="center">
+<p>
 <img src="assets/ucc_logo.jpg" height=100>
 &emsp;
 <img src="assets/google_logo.svg"> 
