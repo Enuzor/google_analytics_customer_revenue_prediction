@@ -1,8 +1,6 @@
 # Google-Analytics-Customer-Revenue-Prediction
 <p>
 <img src="https://img.shields.io/badge/-peterdavidfagan-blue"> 
-&emsp; 
-<img src=https://img.shields.io/github/license/peterdavidfagan/Google-Analytics-Customer-Revenue-Prediction>
 </p>
 
 <p>
